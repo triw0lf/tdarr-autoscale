@@ -49,3 +49,7 @@ Automatically scale Tdarr GPU workers based on Plex activity. Reduces workers wh
 ## License
 
 MIT
+
+## Extras
+
+[![Built with Claude](https://img.shields.io/badge/Built%20with%20%E2%9D%A4%EF%B8%8F-Claude-blueviolet)](https://claude.ai)
