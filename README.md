@@ -1,6 +1,6 @@
 # Tdarr Autoscale
 
-Automatically scale Tdarr GPU workers based on Plex activity. Reduces workers when people are streaming to prioritize Plex, scales back up when idle.
+Automatically scale Tdarr workers based on Plex activity. Reduces workers when people are streaming to prioritize Plex, scales back up when idle.
 
 ## Features
 
@@ -8,6 +8,7 @@ Automatically scale Tdarr GPU workers based on Plex activity. Reduces workers wh
 - Day/Night mode with different worker limits
 - Auto-detects Tdarr node ID
 - Works with Tautulli OR direct Plex API
+- Supports GPU, CPU, or both worker types
 
 ## Requirements
 
@@ -23,14 +24,20 @@ Automatically scale Tdarr GPU workers based on Plex activity. Reduces workers wh
 4. Test: `./tdarr-autoscale.sh`
 5. Add to cron:
 ```
-   crontab -e
-   */5 * * * * /path/to/tdarr-autoscale.sh >> /path/to/tdarr-autoscale.log 2>&1
+crontab -e
+*/5 * * * * /path/to/tdarr-autoscale.sh >> /path/to/tdarr-autoscale.log 2>&1
+```
+
+6. Optional - log rotation (clears log weekly):
+```
+0 0 * * 0 > /path/to/tdarr-autoscale.log
 ```
 
 ## Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `WORKER_TYPE` | `GPU` | Worker type: `GPU`, `CPU`, or `BOTH` |
 | `USE_TAUTULLI` | `true` | Use Tautulli API (set `false` for direct Plex) |
 | `WORKERS_IDLE` | `3` | Workers when no one is watching |
 | `WORKERS_ACTIVE` | `1` | Workers when someone is streaming |
@@ -40,16 +47,31 @@ Automatically scale Tdarr GPU workers based on Plex activity. Reduces workers wh
 | `NIGHT_END` | `5` | Night mode end hour (24h) |
 
 ## Log Output
+
+**GPU only:**
 ```bash
-[2026-01-02 19:15:00] Streams: 0 | Mode: Day | Workers: 3 (no change)
-[2026-01-02 19:20:00] Streams: 1 | Mode: Day | Workers: 1 (-2)
-[2026-01-02 19:25:00] Streams: 0 | Mode: Day | Workers: 3 (+2)
+[2026-01-02 19:15:00] Streams: 0 | Mode: Day | GPU Workers: 3 (no change)
+[2026-01-02 19:20:00] Streams: 1 | Mode: Day | GPU Workers: 1 (-2)
+[2026-01-02 19:25:00] Streams: 0 | Mode: Day | GPU Workers: 3 (+2)
+```
+
+**CPU only:**
+```bash
+[2026-01-02 19:15:00] Streams: 0 | Mode: Day | CPU Workers: 3 (no change)
+[2026-01-02 19:20:00] Streams: 1 | Mode: Day | CPU Workers: 1 (-2)
+[2026-01-02 19:25:00] Streams: 0 | Mode: Day | CPU Workers: 3 (+2)
+```
+
+**Both GPU and CPU:**
+```bash
+[2026-01-02 19:15:00] Streams: 0 | Mode: Day | GPU Workers: 3 (no change) | CPU Workers: 3 (+1)
+[2026-01-02 19:20:00] Streams: 1 | Mode: Day | GPU Workers: 1 (-2) | CPU Workers: 1 (-2)
 ```
 
 ## License
 
 MIT
 
-## Extras
+---
 
 [![Built with Claude](https://img.shields.io/badge/Built%20with%20%E2%9D%A4%EF%B8%8F-Claude-blueviolet)](https://claude.ai)
