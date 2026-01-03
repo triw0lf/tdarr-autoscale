@@ -2,7 +2,7 @@
 #
 # Tdarr Autoscale - Dynamic worker scaling based on Plex activity
 # 
-# Automatically scales Tdarr GPU workers down when people are streaming
+# Automatically scales Tdarr workers down when people are streaming
 # and back up when Plex is idle. Supports both Tautulli and direct Plex API.
 #
 # Features:
@@ -10,6 +10,7 @@
 #   - Day/Night mode with different worker limits
 #   - Auto-detects Tdarr node ID
 #   - Works with Tautulli OR direct Plex API
+#   - Supports GPU, CPU, or BOTH transcoding
 #
 # Requirements: curl, jq
 #
@@ -24,8 +25,6 @@
 #
 # Optional - log rotation (add to crontab, clears log weekly):
 #   0 0 * * 0 > /path/to/tdarr-autoscale.log
-#
-# GitHub: [your gist URL here]
 
 #######################
 # CONFIGURATION
@@ -33,6 +32,10 @@
 
 # Tdarr settings
 TDARR_URL="http://localhost:8265"
+
+# Worker type - what does your Tdarr use for transcoding?
+# Options: "GPU" (Intel QSV, NVENC, etc.), "CPU" (software encoding), or "BOTH"
+WORKER_TYPE="GPU"
 
 # Plex monitoring - choose ONE method:
 
@@ -61,6 +64,18 @@ NIGHT_END=5     # 5 AM
 # SCRIPT - no edits needed below
 #######################
 
+# Convert friendly name to Tdarr worker type(s)
+if [ "$WORKER_TYPE" = "GPU" ]; then
+    WORKER_TYPES=("transcodegpu")
+elif [ "$WORKER_TYPE" = "CPU" ]; then
+    WORKER_TYPES=("transcodecpu")
+elif [ "$WORKER_TYPE" = "BOTH" ]; then
+    WORKER_TYPES=("transcodegpu" "transcodecpu")
+else
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Invalid WORKER_TYPE. Use 'GPU', 'CPU', or 'BOTH'"
+    exit 1
+fi
+
 # Get node ID dynamically (first node found)
 NODE_ID=$(curl -s "${TDARR_URL}/api/v2/get-nodes" | jq -r 'keys[0]')
 
@@ -68,9 +83,6 @@ if [ -z "$NODE_ID" ] || [ "$NODE_ID" = "null" ]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Could not get Tdarr node ID"
     exit 1
 fi
-
-# Get current worker limit from Tdarr
-CURRENT=$(curl -s "${TDARR_URL}/api/v2/get-nodes" | jq -r ".\"${NODE_ID}\".workerLimits.transcodegpu")
 
 # Get current hour (0-23)
 HOUR=$(date +%H)
@@ -118,27 +130,43 @@ else
     TIME_MODE="Day"
 fi
 
-# Only make API calls if change needed
-if [ "$CURRENT" -ne "$TARGET_WORKERS" ]; then
-    ORIGINAL=$CURRENT
-    if [ "$CURRENT" -lt "$TARGET_WORKERS" ]; then
-        while [ "$CURRENT" -lt "$TARGET_WORKERS" ]; do
-            curl -s -X POST "${TDARR_URL}/api/v2/alter-worker-limit" \
-                -H "Content-Type: application/json" \
-                -d '{"data":{"nodeID":"'"${NODE_ID}"'","workerType":"transcodegpu","process":"increase"}}' > /dev/null
-            CURRENT=$((CURRENT + 1))
-        done
-        DIFF="+$((TARGET_WORKERS - ORIGINAL))"
+# Process each worker type and build output
+OUTPUT=""
+for TDARR_WORKER_TYPE in "${WORKER_TYPES[@]}"; do
+    # Friendly name for logging
+    if [ "$TDARR_WORKER_TYPE" = "transcodegpu" ]; then
+        TYPE_LABEL="GPU Workers"
     else
-        while [ "$CURRENT" -gt "$TARGET_WORKERS" ]; do
-            curl -s -X POST "${TDARR_URL}/api/v2/alter-worker-limit" \
-                -H "Content-Type: application/json" \
-                -d '{"data":{"nodeID":"'"${NODE_ID}"'","workerType":"transcodegpu","process":"decrease"}}' > /dev/null
-            CURRENT=$((CURRENT - 1))
-        done
-        DIFF="-$((ORIGINAL - TARGET_WORKERS))"
+        TYPE_LABEL="CPU Workers"
     fi
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Streams: $STREAMS | Mode: $TIME_MODE | Workers: $TARGET_WORKERS ($DIFF)"
-else
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Streams: $STREAMS | Mode: $TIME_MODE | Workers: $TARGET_WORKERS (no change)"
-fi
+
+    # Get current worker limit from Tdarr
+    CURRENT=$(curl -s "${TDARR_URL}/api/v2/get-nodes" | jq -r ".\"${NODE_ID}\".workerLimits.${TDARR_WORKER_TYPE}")
+
+    # Only make API calls if change needed
+    if [ "$CURRENT" -ne "$TARGET_WORKERS" ]; then
+        ORIGINAL=$CURRENT
+        if [ "$CURRENT" -lt "$TARGET_WORKERS" ]; then
+            while [ "$CURRENT" -lt "$TARGET_WORKERS" ]; do
+                curl -s -X POST "${TDARR_URL}/api/v2/alter-worker-limit" \
+                    -H "Content-Type: application/json" \
+                    -d '{"data":{"nodeID":"'"${NODE_ID}"'","workerType":"'"${TDARR_WORKER_TYPE}"'","process":"increase"}}' > /dev/null
+                CURRENT=$((CURRENT + 1))
+            done
+            DIFF="+$((TARGET_WORKERS - ORIGINAL))"
+        else
+            while [ "$CURRENT" -gt "$TARGET_WORKERS" ]; do
+                curl -s -X POST "${TDARR_URL}/api/v2/alter-worker-limit" \
+                    -H "Content-Type: application/json" \
+                    -d '{"data":{"nodeID":"'"${NODE_ID}"'","workerType":"'"${TDARR_WORKER_TYPE}"'","process":"decrease"}}' > /dev/null
+                CURRENT=$((CURRENT - 1))
+            done
+            DIFF="-$((ORIGINAL - TARGET_WORKERS))"
+        fi
+        OUTPUT="$OUTPUT | $TYPE_LABEL: $TARGET_WORKERS ($DIFF)"
+    else
+        OUTPUT="$OUTPUT | $TYPE_LABEL: $TARGET_WORKERS (no change)"
+    fi
+done
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Streams: $STREAMS | Mode: $TIME_MODE$OUTPUT"
