@@ -40,7 +40,7 @@ Automatically scale Tdarr GPU workers based on Plex activity. Reduces workers wh
 | `NIGHT_END` | `5` | Night mode end hour (24h) |
 
 ## Log Output
-```
+```bash
 [2026-01-02 19:15:00] Streams: 0 | Mode: Day | Workers: 3 (no change)
 [2026-01-02 19:20:00] Streams: 1 | Mode: Day | Workers: 1 (-2)
 [2026-01-02 19:25:00] Streams: 0 | Mode: Day | Workers: 3 (+2)
